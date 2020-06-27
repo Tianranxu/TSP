@@ -231,7 +231,7 @@ for sl_days in range(30, 91, 10):
         'heat': 0.02,
         'atr_period': 20,
         'atr_multiplier': 5,
-        'stop_loss_days': sl_days,
+        'stop_loss_days': sl_days
     }
     ea = EA(filenames, setting)
     ea.mainFunc()
