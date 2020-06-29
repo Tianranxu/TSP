@@ -13,16 +13,24 @@ class EA(object):
         self.atr_period = setting['atr_period']
         self.atr_multiplier = setting['atr_multiplier']
         self.stop_loss_days = setting['stop_loss_days']
+        self.count = setting['count']
         self.icagr = 0.00
         self.max_draw_down = 0.00
         self.bliss = 0.00
 
     def initTmp(self):
         # 作用为全局临时变量
-        self.current_position = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # 11
-        self.current_price = [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]  # 11
-        self.last_date = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # 11
-        self.last_price = [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]  # 11
+        self.current_position = []
+        self.current_price = []
+        self.last_date = []
+        self.last_price = []
+        self.entry_price = []
+        for num in range(0, self.count, 1):
+            self.current_position.append(0)
+            self.last_date.append(0)
+            self.current_price.append(0.00)
+            self.last_price.append(0.00)
+            self.entry_price.append(0.00)
 
     def setData(self):
         self.data = []
@@ -68,7 +76,7 @@ class EA(object):
                 trade.append([int(d.date), float(d.close), 'Exit'])
         self.trade_info.append(pd.DataFrame(columns=['date', 'price', 'note'], data=trade))
         self.trade_info[ind]['instru'] = ind
-        self.stopLossInTrade(ind)
+        #self.stopLossInTrade(ind)
 
     def stopLossInTrade(self, index):
         for ind, t in self.trade_info[index].iterrows():
@@ -142,6 +150,19 @@ class EA(object):
             self.trade_log.loc[index, 'left_equity'] = left_equity
         self.profit = pd.DataFrame(columns=['unit', 'entry_date', 'entry_price', 'exit_date', 'exit_price', 'profit', 'instru'], data=profit)
 
+    def profitSum(self):
+        profitSum = []
+        self.totalProfit = 0
+        for num in range(0, self.count, 1):
+            profitSum.append([self.files[num], 0])
+        for index, p in self.profit.iterrows():
+            profitSum[int(p.instru)][1] = profitSum[int(p.instru)][1] + p.profit
+            self.totalProfit = self.totalProfit + p.profit
+        for num in range(0, self.count, 1):
+            profitSum[num][1] = round(profitSum[num][1], 4)
+            profitSum[num].append(round(profitSum[num][1] / self.totalProfit, 4))
+        self.profitSum = pd.DataFrame(columns=['file', 'profit', 'rate'], data=profitSum)
+
     def getMergeDate(self):
         date_set = set([])
         for d in self.data:
@@ -184,6 +205,42 @@ class EA(object):
                 self.equity_log.loc[index, 'close_balance'] = close_balance
                 self.equity_log.loc[index, 'open_profit'] = equity - close_balance
 
+    def getEquityLogInOpenprofit(self):
+        self.initTmp()
+        self.equity_log = pd.DataFrame(columns=['date'], data=self.getMergeDate())
+        self.equity_log['close_balance'] = self.init_equity
+        self.equity_log['open_profit'] = 0.00
+        self.equity_log['equity'] = self.init_equity
+        close_balance = self.init_equity
+        index_t = 0
+        # 在equity_log 和 trade_log 这两个循环里面，预设两边最后一个date是相同的，如果有不同的情况需要修改
+        current_trade = self.trade_log.iloc[index_t]
+        for index, d in self.equity_log.iterrows():
+            while d.date == current_trade.date and index_t < len(self.trade_log) - 1:
+                self.current_position[current_trade.instru] = current_trade.unit
+                if current_trade.note == 'Entry':
+                    self.entry_price[current_trade.instru] = current_trade.price
+                if current_trade.note == 'Exit':
+                    #close_balance = close_balance + self.profit[d.date == self.profit.exit_date]['profit'].iloc[0]
+                    close_balance = close_balance + \
+                                    current_trade.unit * (self.data_d[current_trade.instru].loc[d.date, 'close'] - self.entry_price[current_trade.instru])
+                    self.entry_price[current_trade.instru] = 0
+                index_t = index_t + 1
+                current_trade = self.trade_log.iloc[index_t]
+
+            if d.date <= current_trade.date:
+                open_profit = 0
+                for i, x in enumerate(self.current_position):
+                    if x != 0:
+                        try:
+                            self.current_price[i] = self.data_d[i].loc[d.date, 'close']
+                        except Exception as ex:
+                            print('equity date miss', d.date)
+                        open_profit += x * (self.current_price[i] - self.entry_price[i])
+                self.equity_log.loc[index, 'close_balance'] = close_balance
+                self.equity_log.loc[index, 'open_profit'] = open_profit
+                self.equity_log.loc[index, 'equity'] = open_profit + close_balance
+
     def getPercentDrawDown(self):
         peak = 0
         for index, e in self.equity_log.iterrows():
@@ -212,32 +269,40 @@ class EA(object):
         self.setData()
         self.generateTradeLog()
         self.getPositionAndProfit()
+        #self.profitSum()
         self.getEquityLog()
+        #self.getEquityLogInOpenprofit()
         self.getICAGR()
         self.getPercentDrawDown()
         self.getBliss()
 
 # msg = ''
-for sl_days in range(30, 91, 10):
-    start = datetime.datetime.now()
-    filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-    #filenames = ['SP2_B.CSV', 'GC2_B.CSV'] #'SP2_B2.CSV'
-    for i, f in enumerate(filenames):
-        filenames[i] = './in_data/' + f
-    setting = {
-        'fast': 20,
-        'slow': 300,
-        'equity': 2000000.00,
-        'heat': 0.02,
-        'atr_period': 20,
-        'atr_multiplier': 5,
-        'stop_loss_days': sl_days
-    }
-    ea = EA(filenames, setting)
-    ea.mainFunc()
-    # ea.trade_log.to_csv('./out_data/tradeLog11.csv')
-    # ea.equity_log.to_csv('./out_data/equityLog11.csv')
-    end = datetime.datetime.now()
-    print('stop_loss_days:'+str(sl_days)+', ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time:'+str(end - start))
+# for sl_days in range(30, 91, 10):
+start = datetime.datetime.now()
+#filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
+filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
+             'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
+             'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV',
+             'SI2_B.CSV', 'SM2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV']
+for i, f in enumerate(filenames):
+    filenames[i] = './in_data/new36/' + f  # new36/
+
+setting = {
+    'count': 36,
+    'fast': 25,
+    'slow': 200,
+    'equity': 2000000.00,
+    'heat': 0.005,
+    'atr_period': 20,
+    'atr_multiplier': 5,
+    'stop_loss_days': 60
+}
+ea = EA(filenames, setting)
+ea.mainFunc()
+#ea.profitSum.to_csv('./out_data/profitSum.csv')
+#ea.trade_log.to_csv('./out_data/tradeLog12_C.csv')
+#ea.equity_log.to_csv('./out_data/equityLog12_C.csv')
+end = datetime.datetime.now()
+print('ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time:'+str(end - start))
 #     msg += 'fast:20, slow:'+str(slow)+', ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time'+str(end - start)+"\n"
 # print(msg)

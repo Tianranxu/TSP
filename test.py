@@ -208,20 +208,24 @@ class EA(object):
         self.getBliss()
 
 
-filenames = ['JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV',
-             'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-for i, f in enumerate(filenames):
-    filenames[i] = './in_data/' + f
-setting = {
-    'fast': 20,
-    'slow': 300,
-    'equity': 2000000.00,
-    'heat': 0.02,
-    'atr_period': 20,
-    'atr_multiplier': 5
-}
-ea = EA(filenames, setting)
-ea.mainFunc()
-ea.trade_log.to_csv('./out_data/tradeLog11.csv')
-ea.equity_log.to_csv('./out_data/equityLog11.csv')
-print(ea.bliss)
+# filenames = ['JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV',
+#              'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
+# for i, f in enumerate(filenames):
+#     filenames[i] = './in_data/' + f
+# setting = {
+#     'fast': 20,
+#     'slow': 300,
+#     'equity': 2000000.00,
+#     'heat': 0.02,
+#     'atr_period': 20,
+#     'atr_multiplier': 5
+# }
+# ea = EA(filenames, setting)
+# ea.mainFunc()
+# ea.trade_log.to_csv('./out_data/tradeLog11.csv')
+# ea.equity_log.to_csv('./out_data/equityLog11.csv')
+# print(ea.bliss)
+a = []
+a.append([233, 444])
+a[0].append(555)
+print(a)
