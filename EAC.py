@@ -93,30 +93,27 @@ class EA(object):
                     self.trade_info[index].loc[ind + 1, 'price'] = float((self.data[index].loc[tmp_index + 1].open + self.data[index].loc[tmp_index + 1, 'low']) / 2)
 
     def trailingStopLoss(self, index):
-        self.data[index]['sl_atr'] = self.getATR(index, self.sl_atr_period)
+        #self.data[index]['sl_atr'] = self.getATR(index, self.sl_atr_period)
         ind_t = 0
-        price_high = 0
-        trailing_stop = 0
-        for ind, d in self.data[index].iterrows():
+        while ind_t < len(self.trade_info[index]) - 1:
+            price_high = 0
+            trailing_stop = 0
             entry = self.trade_info[index].iloc[ind_t]
             exit = self.trade_info[index].iloc[ind_t + 1]
-            if d.date >= entry.date and d.date < exit.date:
-                if d.close <= trailing_stop:
+            start = self.data[index][self.data[index].date == entry.date].index.values
+            end = self.data[index][self.data[index].date == exit.date].index.values
+            data_in_trade = self.data[index].loc[start[0]:end[0]]
+            for ind, d in data_in_trade.iterrows():
+                if d.close <= trailing_stop and ind < len(self.data[index]) - 1:
+                    print('instru:', index, 'no:', ind_t, 'price_high:', price_high, 'trailing_stop:', trailing_stop, 'close:', d.close, 'date:', self.data[index].loc[ind + 1, 'date'])
                     self.trade_info[index].loc[ind_t + 1, 'date'] = self.data[index].loc[ind + 1, 'date']
                     self.trade_info[index].loc[ind_t + 1, 'price'] = float((self.data[index].loc[ind + 1].open + self.data[index].loc[ind + 1, 'low']) / 2)
-                    ind_t = ind_t + 2
-                    price_high = 0
-                    trailing_stop = 0
+                    break
                 if price_high < d.close:
                     price_high = d.close
-                if trailing_stop < price_high - 3 * d.sl_atr:
-                    trailing_stop = price_high - 3 * d.sl_atr
-                if d.date == exit.date:
-                    ind_t = ind_t + 2
-                    price_high = 0
-                    trailing_stop = 0
-                if ind_t >= len(self.trade_info[index]) - 1:
-                    break
+                if trailing_stop < price_high - 3 * d.atr:
+                    trailing_stop = price_high - 3 * d.atr
+            ind_t = ind_t + 2
 
     def getATR(self, ind, period):
         ture_range = []
@@ -312,21 +309,21 @@ class EA(object):
 # msg = ''
 # for sl_days in range(30, 91, 10):
 start = datetime.datetime.now()
-filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-# filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
-#              'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
-#              'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV',
-#              'SI2_B.CSV', 'SM2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV']
+#filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
+filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
+             'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
+             'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV',  'SB2_B.CSV', 'SF_B.CSV',
+             'SI2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV'] #'SM2_B.CSV',   'S2_B.CSV', 价格为负数先不管
 for i, f in enumerate(filenames):
     filenames[i] = './in_data/new36/' + f  # new36/
 
 setting = {
-    'count': 12,
-    'fast': 20,
-    'slow': 200,
+    'count': 34,
+    'fast': 10,
+    'slow': 100,
     'equity': 2000000.00,
-    'heat': 0.02,
-    'atr_period': 20,
+    'heat': 0.005,
+    'atr_period': 100,
     'sl_atr_period': 100,
     'atr_multiplier': 5,
     'stop_loss_days': 60
@@ -334,8 +331,8 @@ setting = {
 ea = EA(filenames, setting)
 ea.mainFunc()
 #ea.profitSum.to_csv('./out_data/profitSum.csv')
-ea.trade_log.to_csv('./out_data/tradeLog36.csv')
-#ea.equity_log.to_csv('./out_data/equityLog12_C.csv')
+#ea.trade_log.to_csv('./out_data/tradeLog36.csv')
+ea.equity_log.to_csv('./out_data/equityLog34.csv')
 end = datetime.datetime.now()
 print('ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time:'+str(end - start))
 #     msg += 'fast:20, slow:'+str(slow)+', ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time'+str(end - start)+"\n"
