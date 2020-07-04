@@ -11,6 +11,7 @@ class EA(object):
         self.init_equity = setting['equity']
         self.heat = setting['heat']
         self.atr_period = setting['atr_period']
+        self.sl_atr_period = setting['sl_atr_period']
         self.atr_multiplier = setting['atr_multiplier']
         self.stop_loss_days = setting['stop_loss_days']
         self.count = setting['count']
@@ -41,7 +42,7 @@ class EA(object):
             self.data_d.append(self.data[i].set_index('date'))  #以date为index，加快运算速度
             self.data[i]['fast_lag'] = self.getLag(self.data[i].close, self.fast)
             self.data[i]['slow_lag'] = self.getLag(self.data[i].close, self.slow)
-            self.setATR(i)
+            self.data[i]['atr'] = self.getATR(i, self.atr_period)
             self.calculateTrade(i)
 
     def getLag(self, prices, time_const):
@@ -76,6 +77,7 @@ class EA(object):
                 trade.append([int(d.date), float(d.close), 'Exit'])
         self.trade_info.append(pd.DataFrame(columns=['date', 'price', 'note'], data=trade))
         self.trade_info[ind]['instru'] = ind
+        self.trailingStopLoss(ind)
         #self.stopLossInTrade(ind)
 
     def stopLossInTrade(self, index):
@@ -90,13 +92,39 @@ class EA(object):
                     self.trade_info[index].loc[ind + 1, 'date'] = self.data[index].loc[tmp_index + 1, 'date']
                     self.trade_info[index].loc[ind + 1, 'price'] = float((self.data[index].loc[tmp_index + 1].open + self.data[index].loc[tmp_index + 1, 'low']) / 2)
 
-    def setATR(self, ind):
+    def trailingStopLoss(self, index):
+        self.data[index]['sl_atr'] = self.getATR(index, self.sl_atr_period)
+        ind_t = 0
+        price_high = 0
+        trailing_stop = 0
+        for ind, d in self.data[index].iterrows():
+            entry = self.trade_info[index].iloc[ind_t]
+            exit = self.trade_info[index].iloc[ind_t + 1]
+            if d.date >= entry.date and d.date < exit.date:
+                if d.close <= trailing_stop:
+                    self.trade_info[index].loc[ind_t + 1, 'date'] = self.data[index].loc[ind + 1, 'date']
+                    self.trade_info[index].loc[ind_t + 1, 'price'] = float((self.data[index].loc[ind + 1].open + self.data[index].loc[ind + 1, 'low']) / 2)
+                    ind_t = ind_t + 2
+                    price_high = 0
+                    trailing_stop = 0
+                if price_high < d.close:
+                    price_high = d.close
+                if trailing_stop < price_high - 3 * d.sl_atr:
+                    trailing_stop = price_high - 3 * d.sl_atr
+                if d.date == exit.date:
+                    ind_t = ind_t + 2
+                    price_high = 0
+                    trailing_stop = 0
+                if ind_t >= len(self.trade_info[index]) - 1:
+                    break
+
+    def getATR(self, ind, period):
         ture_range = []
         last_close = self.data[ind].iloc[0].close
         for index, d in self.data[ind].iterrows():
             ture_range.append(max(d.high, last_close) - min(d.low, last_close))
             last_close = d.close
-        self.data[ind]['atr'] = self.getLag(ture_range, self.atr_period)
+        return self.getLag(ture_range, period)
 
     def generateTradeLog(self):
         for index, t in enumerate(self.trade_info):
@@ -143,9 +171,11 @@ class EA(object):
                 self.trade_log.loc[index, 'unit'] = self.current_position[t.instru]
             elif t.note == 'Exit':
                 profit.append([self.current_position[t.instru], self.last_date[t.instru], self.last_price[t.instru], t.date, t.price,
-                               round(self.current_position[t.instru] * (t.price - self.last_price[t.instru]), 3), t.instru])
+                               float(self.current_position[t.instru] * (t.price - self.last_price[t.instru])), t.instru])
                 left_equity = left_equity + self.current_position[t.instru] * t.price
                 self.current_position[t.instru] = 0
+                self.last_price[t.instru] = 0
+                self.last_date[t.instru] = 0
                 self.trade_log.loc[index, 'unit'] = 0
             self.trade_log.loc[index, 'left_equity'] = left_equity
         self.profit = pd.DataFrame(columns=['unit', 'entry_date', 'entry_price', 'exit_date', 'exit_price', 'profit', 'instru'], data=profit)
@@ -180,17 +210,21 @@ class EA(object):
         self.equity_log['equity'] = self.init_equity
         left_equity = self.init_equity
         close_balance = self.init_equity
-        index_t = 0
         # 在equity_log 和 trade_log 这两个循环里面，预设两边最后一个date是相同的，如果有不同的情况需要修改
+        index_t = 0
         current_trade = self.trade_log.iloc[index_t]
         for index, d in self.equity_log.iterrows():
-            while d.date == current_trade.date and index_t < len(self.trade_log) - 1:
+            while d.date == current_trade.date and index_t < len(self.trade_log):
                 left_equity = current_trade.left_equity
                 self.current_position[current_trade.instru] = current_trade.unit
+                if current_trade.note == 'Entry':
+                    self.entry_price[current_trade.instru] = current_trade.price
                 if current_trade.note == 'Exit':
-                    close_balance = close_balance + self.profit[d.date == self.profit.exit_date]['profit'].iloc[0]
-                index_t = index_t + 1
+                    #close_balance = close_balance + self.profit[current_trade.date == self.profit.exit_date]['profit'].iloc[0]
+                    close_balance = close_balance + self.current_position[current_trade.instru] * (current_trade.price - self.entry_price[current_trade.instru])
+                    self.entry_price[current_trade.instru] = 0
                 current_trade = self.trade_log.iloc[index_t]
+                index_t = index_t + 1
 
             if d.date <= current_trade.date:
                 equity = left_equity
@@ -211,22 +245,21 @@ class EA(object):
         self.equity_log['close_balance'] = self.init_equity
         self.equity_log['open_profit'] = 0.00
         self.equity_log['equity'] = self.init_equity
+        self.after_profit = []
         close_balance = self.init_equity
         index_t = 0
         # 在equity_log 和 trade_log 这两个循环里面，预设两边最后一个date是相同的，如果有不同的情况需要修改
         current_trade = self.trade_log.iloc[index_t]
         for index, d in self.equity_log.iterrows():
-            while d.date == current_trade.date and index_t < len(self.trade_log) - 1:
-                self.current_position[current_trade.instru] = current_trade.unit
+            while d.date == current_trade.date and index_t < len(self.trade_log):
                 if current_trade.note == 'Entry':
                     self.entry_price[current_trade.instru] = current_trade.price
                 if current_trade.note == 'Exit':
-                    #close_balance = close_balance + self.profit[d.date == self.profit.exit_date]['profit'].iloc[0]
-                    close_balance = close_balance + \
-                                    current_trade.unit * (self.data_d[current_trade.instru].loc[d.date, 'close'] - self.entry_price[current_trade.instru])
+                    close_balance = close_balance + self.current_position[current_trade.instru] * (current_trade.price - self.entry_price[current_trade.instru])
                     self.entry_price[current_trade.instru] = 0
-                index_t = index_t + 1
+                self.current_position[current_trade.instru] = current_trade.unit
                 current_trade = self.trade_log.iloc[index_t]
+                index_t = index_t + 1
 
             if d.date <= current_trade.date:
                 open_profit = 0
@@ -270,8 +303,8 @@ class EA(object):
         self.generateTradeLog()
         self.getPositionAndProfit()
         #self.profitSum()
-        self.getEquityLog()
-        #self.getEquityLogInOpenprofit()
+        #self.getEquityLog()
+        self.getEquityLogInOpenprofit()
         self.getICAGR()
         self.getPercentDrawDown()
         self.getBliss()
@@ -279,28 +312,29 @@ class EA(object):
 # msg = ''
 # for sl_days in range(30, 91, 10):
 start = datetime.datetime.now()
-#filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
-             'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
-             'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV',
-             'SI2_B.CSV', 'SM2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV']
+filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
+# filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
+#              'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
+#              'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV',
+#              'SI2_B.CSV', 'SM2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV']
 for i, f in enumerate(filenames):
     filenames[i] = './in_data/new36/' + f  # new36/
 
 setting = {
-    'count': 36,
-    'fast': 25,
+    'count': 12,
+    'fast': 20,
     'slow': 200,
     'equity': 2000000.00,
-    'heat': 0.005,
+    'heat': 0.02,
     'atr_period': 20,
+    'sl_atr_period': 100,
     'atr_multiplier': 5,
     'stop_loss_days': 60
 }
 ea = EA(filenames, setting)
 ea.mainFunc()
 #ea.profitSum.to_csv('./out_data/profitSum.csv')
-#ea.trade_log.to_csv('./out_data/tradeLog12_C.csv')
+ea.trade_log.to_csv('./out_data/tradeLog36.csv')
 #ea.equity_log.to_csv('./out_data/equityLog12_C.csv')
 end = datetime.datetime.now()
 print('ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time:'+str(end - start))
