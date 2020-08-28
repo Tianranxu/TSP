@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import datetime
 import pandas as pd
 import math
@@ -105,7 +106,7 @@ class EA(object):
             data_in_trade = self.data[index].loc[start[0]:end[0]]
             for ind, d in data_in_trade.iterrows():
                 if d.close <= trailing_stop and ind < len(self.data[index]) - 1:
-                    print('instru:', index, 'no:', ind_t, 'price_high:', price_high, 'trailing_stop:', trailing_stop, 'close:', d.close, 'date:', self.data[index].loc[ind + 1, 'date'])
+                    # print('instru:', index, 'no:', ind_t, 'price_high:', price_high, 'trailing_stop:', trailing_stop, 'close:', d.close, 'date:', self.data[index].loc[ind + 1, 'date'])
                     self.trade_info[index].loc[ind_t + 1, 'date'] = self.data[index].loc[ind + 1, 'date']
                     self.trade_info[index].loc[ind_t + 1, 'price'] = float((self.data[index].loc[ind + 1].open + self.data[index].loc[ind + 1, 'low']) / 2)
                     break
@@ -310,15 +311,16 @@ class EA(object):
 # for sl_days in range(30, 91, 10):
 start = datetime.datetime.now()
 #filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
-             'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
-             'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV',  'SB2_B.CSV', 'SF_B.CSV',
-             'SI2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV'] #'SM2_B.CSV',   'S2_B.CSV', 价格为负数先不管
+# filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV', 'DJ_B.CSV', 'DX2_B.CSV',
+#              'ED_B.CSV', 'FC_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'ND_B.CSV', 'NE_B.CSV',
+#              'NG2_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV',  'SB2_B.CSV', 'SF_B.CSV',
+#              'SI2_B.CSV', 'SP2_B.CSV', 'T1U_B.CSV', 'US_B.CSV', 'W2_B.CSV', 'S2_B.CSV'] #'SM2_B.CSV',   'S2_B.CSV', 价格为负数先不管
+filenames = ['AD_B.CSV', 'BO2_B.CSV']
 for i, f in enumerate(filenames):
     filenames[i] = './in_data/new36/' + f  # new36/
 
 setting = {
-    'count': 34,
+    'count': 35,
     'fast': 10,
     'slow': 100,
     'equity': 2000000.00,
