@@ -2,7 +2,7 @@
 import datetime
 import pandas as pd
 import math
-
+import config
 
 class BOT(object):
     def __init__(self, filenames, setting):
@@ -31,13 +31,17 @@ class BOT(object):
     def setData(self):
         self.data = []
         self.trade_info = []
+        self.point_value = []
         # self.data_d = []
         for i, f in enumerate(self.files):
             self.data.append(pd.read_csv(f, index_col=0))
-            # self.data_d.append(self.data[i].set_index('date'))  # 以date为index，加快运算速度
+            fname = f.split('.')[1].split('/')[3]
+            self.point_value.append(config.PointValue[fname])
+            self.data_d.append(self.data[i].set_index('date'))  # 以date为index，加快运算速度
             self.trade_info.append(pd.DataFrame(columns=['date', 'price', 'note', 'status', 'data_index']))
             self.calculateTrade(i)
             self.trailingStopLoss(i)
+
 
     def getLag(self, prices, time_const):
         lag = []
@@ -65,7 +69,7 @@ class BOT(object):
     def calculateTrade(self, index):
         current_status = 'flat'
         for i, d in self.data[index].iterrows():
-            if i < 25:  # warm up
+            if i < self.setting['warm_up_days']:  # warm up
                 continue
 
             if d.close >= d.last_high1:
@@ -323,22 +327,7 @@ filenames = ['BP_B.CSV', 'CD_B.CSV']
 for num, f in enumerate(filenames):
     filenames[num] = './in_data/reorganize/' + f
 
-setting = {
-    'count': 35,
-    'fast': 50,
-    'slow': 100,
-    'equity': 2000000.00,
-    'heat': 0.005,
-    'atr_period': 100,
-    'sl_atr_period': 100,
-    'atr_multiplier': 5,
-    'stop_loss_days': 60,
-    'break_limit_1': 50,
-    'break_limit_2': 25,
-    'slippage_factor': 0.5,
-    'ts_multiplier': 3,
-}
-ea = BOT(filenames, setting)
+ea = BOT(filenames, config.Setting)
 ea.mainFunc()
 # ea.profitSum.to_csv('./out_data/profitSum.csv')
 # ea.trade_log.to_csv('./out_data/tradeLog36.csv')

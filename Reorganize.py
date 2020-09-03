@@ -1,6 +1,6 @@
 # -*- coding: UTF-8 -*-
 import pandas as pd
-
+import config
 
 class Reorganize(object):
     def __init__(self, files, setting):
@@ -72,7 +72,7 @@ class Reorganize(object):
             elif high1['second'][0] == -1 or d.close >= high1['second'][1]:
                 high1['second'] = [i, d.close]
 
-            if i - high1['peak'][0] >= self.setting['break_limit_1']:  # 当最高价超过天数范围
+            if i - high1['peak'][0] >= self.setting['look_back_period_1']:  # 当最高价超过天数范围
                 high1['peak'] = high1['second']
                 high1['second'] = [-1, 0]
                 if high1['peak'][0] != i:
@@ -88,7 +88,7 @@ class Reorganize(object):
             elif high2['second'][0] == -1 or d.close >= high2['second'][1]:
                 high2['second'] = [i, d.close]
 
-            if i - high2['peak'][0] >= self.setting['break_limit_2']:  # 当最高价超过天数范围
+            if i - high2['peak'][0] >= self.setting['look_back_period_2']:  # 当最高价超过天数范围
                 high2['peak'] = high2['second']
                 high2['second'] = [-1, 0]
                 if high2['peak'][0] != i:
@@ -104,7 +104,7 @@ class Reorganize(object):
             elif low1['second'][0] == -1 or d.close <= low1['second'][1]:
                 low1['second'] = [i, d.close]
 
-            if i - low1['peak'][0] >= self.setting['break_limit_1']:  # 当最低价超过天数范围
+            if i - low1['peak'][0] >= self.setting['look_back_period_1']:  # 当最低价超过天数范围
                 low1['peak'] = low1['second']
                 low1['second'] = [-1, 0]
                 if low1['peak'][0] != i:
@@ -120,7 +120,7 @@ class Reorganize(object):
             elif low2['second'][0] == -1 or d.close <= low2['second'][1]:
                 low2['second'] = [i, d.close]
 
-            if i - low2['peak'][0] >= self.setting['break_limit_2']:  # 当最低价超过天数范围
+            if i - low2['peak'][0] >= self.setting['look_back_period_2']:  # 当最低价超过天数范围
                 low2['peak'] = low2['second']
                 low2['second'] = [-1, 0]
                 if low2['peak'][0] != i:
@@ -138,8 +138,8 @@ class Reorganize(object):
 
         # 直接算
         # for i, d in self.data[ind].iterrows():
-        #     if i >= self.setting['break_limit_1']-1:
-        #         tmp_data = self.data[ind][i-self.setting['break_limit_1']+1: i+1]
+        #     if i >= self.setting['look_back_period_1']-1:
+        #         tmp_data = self.data[ind][i-self.setting['look_back_period_1']+1: i+1]
         #         print(tmp_data)
         #         thigh = 0
         #         for c, td in tmp_data.iterrows():
@@ -163,16 +163,5 @@ files = []
 for num, f in enumerate(filenames):
     files.append('./in_data/new36/' + f)
 
-setting = {
-    'count': 1,
-    'fast': 50,
-    'slow': 100,
-    'atr_period': 100,
-    'sl_atr_period': 100,
-    'atr_multiplier': 5,
-    'stop_loss_days': 60,
-    'break_limit_1': 50,
-    'break_limit_2': 25,
-}
-re = Reorganize(files, setting)
+re = Reorganize(files, config.Setting)
 re.mainFunc(filenames)
