@@ -15,16 +15,16 @@ class BOT(object):
     def initTmp(self):
         # 作用为全局临时变量
         self.current_position = []
-        self.current_price = []
+        self.current_data = []
         self.current_status = []
         self.last_date = []
-        self.last_price = []
+        self.last_data = []
         self.entry_price = []
         for num in range(0, self.setting['count'], 1):
+            self.current_data.append(0)
+            self.last_data.append(0)
             self.current_position.append(0)
             self.last_date.append(0)
-            self.current_price.append(0.00)
-            self.last_price.append(0.00)
             self.entry_price.append(0.00)
             self.current_status.append('flat')
 
@@ -32,16 +32,15 @@ class BOT(object):
         self.data = []
         self.trade_info = []
         self.point_value = []
-        # self.data_d = []
+        self.data_d = []
         for i, f in enumerate(self.files):
             self.data.append(pd.read_csv(f, index_col=0))
             fname = f.split('.')[1].split('/')[3]
             self.point_value.append(config.PointValue[fname])
-            self.data_d.append(self.data[i].set_index('date'))  # 以date为index，加快运算速度
-            self.trade_info.append(pd.DataFrame(columns=['date', 'price', 'note', 'status', 'data_index']))
+            self.trade_info.append(pd.DataFrame(columns=['date', 'price', 'note', 'status', 'data_index', 'instru']))
             self.calculateTrade(i)
             self.trailingStopLoss(i)
-
+            self.data_d.append(self.data[i].set_index('date'))  # 以date为index，加快运算速度
 
     def getLag(self, prices, time_const):
         lag = []
@@ -63,7 +62,7 @@ class BOT(object):
         elif (note == 'exit' and status == 'short') or (note == 'entry' and status == 'long'):
             price = data.open + (data.high - data.open) * self.setting['slippage_factor']
         self.trade_info[index].loc[self.trade_info[index].shape[0]] = {'date': date, 'price': price, 'note': note,
-                                                                       'status': status, 'data_index': data_i}
+                                                            'status': status, 'data_index': data_i, 'instru': index}
         return
 
     def calculateTrade(self, index):
@@ -177,10 +176,6 @@ class BOT(object):
             last_close = d.close
         return self.getLag(ture_range, period)
 
-    def getInitPosition(self):
-
-        return
-
     def generateTradeLog(self):
         for index, t in enumerate(self.trade_info):
             if index == 0:
@@ -189,7 +184,6 @@ class BOT(object):
                 self.trade_log = self.trade_log.append(t)
         self.trade_log = self.trade_log.sort_values('date')
         self.trade_log = self.trade_log.reset_index(drop=True)
-        self.trade_log['left_equity'] = self.setting['equity']
         self.trade_log['unit'] = 0
 
     def profitSum(self):
@@ -205,88 +199,130 @@ class BOT(object):
             profitSum[num].append(round(profitSum[num][1] / self.totalProfit, 4))
         self.profitSum = pd.DataFrame(columns=['file', 'profit', 'rate'], data=profitSum)
 
-    def getMergeData(self):
+    def getMergeDate(self):
         date_set = set([])
         for d in self.data:
-            temp_set = set(d.date)
+            temp_set = set(d.date.astype('int'))
             date_set = date_set | temp_set
         date_list = list(date_set)
         date_list.sort()
         return date_list
 
-    def getEquityLog(self):
-        self.initTmp()
-        self.equity_log = pd.DataFrame(columns=['date'], data=self.getMergeData())
-        self.equity_log['close_balance'] = self.setting['equity']
-        self.equity_log['open_profit'] = 0.00
-        self.equity_log['equity'] = self.setting['equity']
-        left_equity = self.setting['equity']
-        close_balance = self.setting['equity']
-        # 在equity_log 和 trade_log 这两个循环里面，预设两边最后一个date是相同的，如果有不同的情况需要修改
-        index_t = 0
-        current_trade = self.trade_log.iloc[index_t]
-        for index, d in self.equity_log.iterrows():
-            while d.date == current_trade.date and index_t < len(self.trade_log):
-                left_equity = current_trade.left_equity
-                self.current_position[current_trade.instru] = current_trade.unit
-                if current_trade.note == 'Entry':
-                    self.entry_price[current_trade.instru] = current_trade.price
-                if current_trade.note == 'Exit':
-                    # close_balance = close_balance + self.profit[current_trade.date == self.profit.exit_date]['profit'].iloc[0]
-                    close_balance = close_balance + self.current_position[current_trade.instru] * (
-                            current_trade.price - self.entry_price[current_trade.instru])
-                    self.entry_price[current_trade.instru] = 0
-                current_trade = self.trade_log.iloc[index_t]
-                index_t = index_t + 1
+    def getRiskPerLot(self, data, index, status):
+        risk_per_lot_trailing = 0
+        if status == 'long':
+            risk_per_lot_inherent = (data.close - data.last_low2) * self.point_value[index]
+            if data.trailing_stop != 0:
+                risk_per_lot_trailing = (data.close - data.trailing_stop) * self.point_value[index]
+        elif status == 'short':
+            risk_per_lot_inherent = (data.last_high2 - data.close) * self.point_value[index]
+            if data.trailing_stop != 0:
+                risk_per_lot_trailing = (data.trailing_stop - data.close) * self.point_value[index]
+        return risk_per_lot_inherent if risk_per_lot_inherent > risk_per_lot_trailing else risk_per_lot_trailing
 
-            if d.date <= current_trade.date:
-                equity = left_equity
-                for i, x in enumerate(self.current_position):
-                    if x != 0:
-                        try:
-                            self.current_price[i] = self.data_d[i].loc[d.date, 'close']
-                        except Exception as ex:
-                            print('equity date miss', d.date)
-                        equity += x * self.current_price[i]
-                self.equity_log.loc[index, 'equity'] = equity
-                self.equity_log.loc[index, 'close_balance'] = close_balance
-                self.equity_log.loc[index, 'open_profit'] = equity - close_balance
+    def getVolatilityPerLot(self, data, index):
+        return data.atr * self.point_value[index]
 
-    def getEquityLogInOpenprofit(self):
+    def getUnitByRisk(self, equity, risk_per_lot):
+        return math.floor(equity * self.setting['initial_risk_budget'] / risk_per_lot)
+
+    def getUnitByVolatility(self, equity, volatility_per_lot):
+        return int(equity * self.setting['initial_risk_budget'] / volatility_per_lot)
+
+    def getInitPosition(self, equity, trade):
+        risk_per_lot = self.getRiskPerLot(self.last_data[trade.instru], trade.instru, trade.status)
+        volatility_per_lot = self.getVolatilityPerLot(self.last_data[trade.instru], trade.instru)
+        initial_units_by_risk = self.getUnitByRisk(equity, risk_per_lot)
+        initial_units_by_volatility = self.getUnitByVolatility(equity, volatility_per_lot)
+        units = initial_units_by_risk if initial_units_by_risk > initial_units_by_volatility else initial_units_by_volatility
+        return units * self.point_value[trade.instru]
+
+    def OnGoingPositionSizing(self, equity, close_balance):
+        total_risk = 0.0
+        for i, x in enumerate(self.current_position):
+            if x != 0:
+                risk_per_lot = self.getRiskPerLot(self.last_data[i], i, self.current_status[i])
+                if risk_per_lot == 0:
+                    continue
+                volatility_per_lot = self.getVolatilityPerLot(self.last_data[i], i)
+                units_by_risk = self.getUnitByRisk(equity, risk_per_lot)
+                units_by_volatility = self.getUnitByVolatility(equity, volatility_per_lot)
+                total_risk += risk_per_lot * (self.current_position[i] / self.point_value[i])
+                current_units = self.current_position[i] / self.point_value[i]
+                if current_units < units_by_risk or self.current_position[i] < units_by_volatility:
+                    ongoing_units = units_by_risk if units_by_risk < units_by_volatility else units_by_volatility
+                    exit_price = self.current_data[i].open + (self.current_data[i].high - self.current_data[i].open)*self.setting['slippage_factor']
+                    adjust_units = self.current_position[i] - ongoing_units
+                    self.current_position[i] = ongoing_units * self.point_value[i]
+                    if self.current_status[i] == 'long':
+                        close_balance += adjust_units * (exit_price - self.entry_price[i])
+                    elif self.current_status[i] == 'short':
+                        close_balance -= adjust_units * (exit_price - self.entry_price[i])
+        # total_risk_ratio = total_risk / equity
+        # if total_risk_ratio > self.setting['total_open_market_risk_limit']:
+        return close_balance, total_risk
+
+    def onGoningTrade(self):
         self.initTmp()
         self.equity_log = pd.DataFrame(columns=['date'], data=self.getMergeDate())
         self.equity_log['close_balance'] = self.setting['equity']
         self.equity_log['open_profit'] = 0.00
         self.equity_log['equity'] = self.setting['equity']
-        self.after_profit = []
+        self.equity_log['total_risk'] = 0.00
         close_balance = self.setting['equity']
-        index_t = 0
+        last_equity = self.setting['equity']
         # 在equity_log 和 trade_log 这两个循环里面，预设两边最后一个date是相同的，如果有不同的情况需要修改
+        index_t = 0
         current_trade = self.trade_log.iloc[index_t]
-        for index, d in self.equity_log.iterrows():
-            while d.date == current_trade.date and index_t < len(self.trade_log):
-                if current_trade.note == 'Entry':
-                    self.entry_price[current_trade.instru] = current_trade.price
-                if current_trade.note == 'Exit':
-                    close_balance = close_balance + self.current_position[current_trade.instru] * (
-                            current_trade.price - self.entry_price[current_trade.instru])
-                    self.entry_price[current_trade.instru] = 0
-                self.current_position[current_trade.instru] = current_trade.unit
-                current_trade = self.trade_log.iloc[index_t]
-                index_t = index_t + 1
+        for ind, d in self.equity_log.iterrows():
+            # update current data
+            for i, x in enumerate(self.current_data):
+                try:
+                    self.current_data[i] = self.data_d[i].loc[d.date, ['open', 'close', 'atr', 'high', 'trailing_stop', 'last_high2', 'last_low2']]
+                except Exception as ex:
+                    # print('equity date miss', i, d.date)
+                    continue
+            # on going position sizing
+            close_balance, total_risk = self.OnGoingPositionSizing(last_equity, close_balance)
+            if ind > 0:
+                self.equity_log.loc[ind - 1, 'total_risk'] = total_risk
 
-            if d.date <= current_trade.date:
-                open_profit = 0
-                for i, x in enumerate(self.current_position):
-                    if x != 0:
-                        try:
-                            self.current_price[i] = self.data_d[i].loc[d.date, 'close']
-                        except Exception as ex:
-                            print('equity date miss', d.date)
-                        open_profit += x * (self.current_price[i] - self.entry_price[i])
-                self.equity_log.loc[index, 'close_balance'] = close_balance
-                self.equity_log.loc[index, 'open_profit'] = open_profit
-                self.equity_log.loc[index, 'equity'] = open_profit + close_balance
+            # position init   # current_trade: 'date', 'price', 'note', 'status', 'data_index', 'instru'
+            while d.date == current_trade.date and index_t < len(self.trade_log):
+                if current_trade.note == 'entry':
+                    self.entry_price[current_trade.instru] = current_trade.price
+                    self.current_status[current_trade.instru] = current_trade.status
+                    self.current_position[current_trade.instru] = self.getInitPosition(last_equity,  current_trade)
+                if current_trade.note == 'exit':
+                    if self.current_status[current_trade.instru] == 'long':
+                        close_balance += self.current_position[current_trade.instru] * (
+                            current_trade.price - self.entry_price[current_trade.instru])
+                    elif self.current_status[current_trade.instru] == 'short':
+                        close_balance -= self.current_position[current_trade.instru] * (
+                                current_trade.price - self.entry_price[current_trade.instru])
+                    self.entry_price[current_trade.instru] = 0
+                    self.current_position[current_trade.instru] = 0
+                    self.current_status[current_trade.instru] = 0
+                index_t = index_t + 1
+                try:
+                    current_trade = self.trade_log.iloc[index_t]
+                except Exception as ex:
+                    break
+
+            # equity calculate
+            open_profit = 0
+            for i, x in enumerate(self.current_position):
+                self.last_data[i] = self.current_data[i]
+                if x != 0:
+                    if self.current_status[i] == 'long':
+                        open_profit += x * (self.current_data[i].close - self.entry_price[i])
+                    elif self.current_status[i] == 'short':
+                        open_profit -= x * (self.current_data[i].close - self.entry_price[i])
+            self.equity_log.loc[ind, 'close_balance'] = close_balance
+            self.equity_log.loc[ind, 'open_profit'] = open_profit
+            last_equity = open_profit + close_balance
+            self.equity_log.loc[ind, 'equity'] = last_equity
+
 
     def getPercentDrawDown(self):
         peak = 0
@@ -299,9 +335,9 @@ class BOT(object):
 
     def getICAGR(self):
         length = len(self.equity_log)
-        ratio = self.equity_log.loc[length - 1, 'equity'] / self.equity_log.loc[0, 'equity']
-        start_date = datetime.datetime.strptime(str(self.equity_log.loc[0, 'date']), '%Y%m%d')
-        end_date = datetime.datetime.strptime(str(self.equity_log.loc[length - 1, 'date']), '%Y%m%d')
+        ratio = self.equity_log.loc[length-1, 'equity'] / self.equity_log.loc[0, 'equity']
+        start_date = datetime.datetime.strptime(str(int(self.equity_log.loc[0, 'date'])), '%Y%m%d')
+        end_date = datetime.datetime.strptime(str(int(self.equity_log.loc[length - 1, 'date'])), '%Y%m%d')
         d = end_date - start_date
         years = d.days / 365.25
         try:
@@ -314,25 +350,31 @@ class BOT(object):
 
     def mainFunc(self):
         self.setData()
+        self.generateTradeLog()
+        self.onGoningTrade()
+        self.getPercentDrawDown()
+        self.getICAGR()
+        self.getBliss()
 
 
 start = datetime.datetime.now()
 # filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
-# filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV',
-#              'DX2_B.CSV', 'ED_B.CSV', 'FC_B.CSV', 'FF_B.CSV', 'FV_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV',
-#              'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'NE_B.CSV', 'NG2_B.CSV', 'NK_B.CSV', 'O2_B.CSV', 'PA2_B.CSV',
-#              'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV', 'SI2_B.CSV',
-#              'SP2_B.CSV', 'US_B.CSV', 'W2_B.CSV']
-filenames = ['BP_B.CSV', 'CD_B.CSV']
+filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B.CSV', 'CT2_B.CSV', 'CU_B.CSV',
+             'DX2_B.CSV', 'ED_B.CSV', 'FC_B.CSV', 'FF_B.CSV', 'FV_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV',
+             'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'NE_B.CSV', 'NG2_B.CSV', 'NK_B.CSV', 'O2_B.CSV', 'PA2_B.CSV',
+             'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV', 'SI2_B.CSV',
+             'SP2_B.CSV', 'US_B.CSV', 'W2_B.CSV']
+# filenames = ['BP_B.CSV', 'CD_B.CSV']
 for num, f in enumerate(filenames):
     filenames[num] = './in_data/reorganize/' + f
 
 ea = BOT(filenames, config.Setting)
 ea.mainFunc()
 # ea.profitSum.to_csv('./out_data/profitSum.csv')
-# ea.trade_log.to_csv('./out_data/tradeLog36.csv')
-# ea.equity_log.to_csv('./out_data/equityLog35.csv')
+ea.trade_log.to_csv('./out_data/tradeLogBOT.csv')
+ea.equity_log.to_csv('./out_data/equityLogBOT.csv')
 end = datetime.datetime.now()
+print(ea.equity_log)
 print('ICAGR:' + str(ea.icagr) + ', PDD：' + str(ea.max_draw_down) + ', bliss:' + str(ea.bliss) + ', run time:' + str(
     end - start))
 #     msg += 'fast:20, slow:'+str(slow)+', ICAGR:'+str(ea.icagr)+', PDD：'+str(ea.max_draw_down)+', bliss:'+str(ea.bliss)+', run time'+str(end - start)+"\n"

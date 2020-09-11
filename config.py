@@ -7,6 +7,9 @@ Setting = {
     'heat': 0.005,
     'initial_risk_budget': 0.0025,
     'initial_volatility_budget': 0.0025,
+    'ongoing_risk_limit': 0.01,
+    'ongoing_volatility_limit': 0.0045,
+    'total_open_market_risk_limit': 0.25,
     'atr_period': 100,
     'sl_atr_period': 100,  # atr period for stop loss
     'atr_multiplier': 5,
