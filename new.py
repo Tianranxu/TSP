@@ -70,7 +70,7 @@ class EA(object):
         trade = []
         for index, d in self.data[ind].iterrows():
             if self.data[ind].close >= self.data[ind]['last_50_clost_high']:
-                if current_status = 1:
+                if current_status == 1:
                     # 如果交易状态为 多
                     if self.data[ind].close <= self.data[ind]['last_25_clost_low']:
                         # 下个交易日 退出多头仓位
@@ -83,18 +83,18 @@ class EA(object):
                         # 下个交易日 退出多头仓位
                         self.trade(index, i, 'long', 'exit')
                         current_status = 1
-                elif current_status = 0:
+                elif current_status == 0:
                     # 如果交易状态为 观望
-                    if market_status = 0:
+                    if market_status == 0:
                         # 下个交易日 做多
                         self.trade(index, i, 'long', 'entry')
                     else:
                         pass
-                elif current_status = -1:
+                elif current_status == -1:
                     # 如果交易状态为 空
                     if self.data[ind].close >= self.data[ind]['last_25_clost_high']:
                         # 下个交易日 退出多头仓位
-                        if market_status = 0:
+                        if market_status == 0:
                             # 下个交易日 平掉空头仓位，并同时 做多
                             self.trade(index, i, 'long', 'entry')
                         else:
@@ -107,10 +107,10 @@ class EA(object):
                         self.trade(index, i, 'long', 'exit')
                         current_status = 1
             else:
-                if current_status = 1:
+                if current_status == 1:
                     # 如果交易状态为 多
                     if self.data[ind].close <= self.data[ind]['last_25_clost_low']:
-                        if market_status = 0:
+                        if market_status == 0:
                             # 下个交易日 平掉多头仓位，不同时 做空
                             self.trade(index, i, 'short', 'entry')
                         else:
@@ -124,18 +124,18 @@ class EA(object):
                         # 下个交易日 退出多头仓位
                         self.trade(index, i, 'long', 'exit')
                         current_status = 1
-                elif current_status = 0:
+                elif current_status == 0:
                     # 如果交易状态为 观望
-                    if market_status = 0:
+                    if market_status == 0:
                         pass
                     else:
                         # 下个交易日 做多
                         self.trade(index, i, 'long', 'entry')
-                elif current_status = -1:
+                elif current_status == -1:
                     # 如果交易状态为 空
                     if self.data[ind].close >= self.data[ind]['last_25_clost_high']:
                         # 下个交易日 退出多头仓位
-                        if market_status = 0:
+                        if market_status == 0:
                             # 平掉空头仓位，并同时 做多
                             self.trade(index, i, 'long', 'entry')
                         else:

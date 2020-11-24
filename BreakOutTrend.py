@@ -89,7 +89,6 @@ class BOT(object):
                         elif d.fast_lag <= d.slow_lag:  # trend down
                             self.trade(index, i, 'short', 'exit')
                             current_status = 'flat'
-
             elif d.close <= d.last_low1:
                 if current_status == 'long':
                     if d.close <= d.last_low2:
@@ -113,6 +112,13 @@ class BOT(object):
                         elif d.fast_lag <= d.slow_lag:  # trend down
                             self.trade(index, i, 'short', 'exit')
                             current_status = 'flat'
+            elif d.last_low1 < d.close < d.last_high1:
+                if current_status == 'long' and d.close <= d.last_low2:
+                    self.trade(index, i, 'long', 'exit')
+                    current_status = 'flat'
+                if current_status == 'short' and d.close >= d.last_high2:
+                    self.trade(index, i, 'short', 'exit')
+                    current_status = 'flat'
 
             trade_len = len(self.trade_info[index])
             if i == len(self.data[index]) - 1 and trade_len >= 1 \
@@ -131,7 +137,7 @@ class BOT(object):
             price_high = 0
             price_low = 0
             trailing_stop = 0
-            for i in range(start, end + 1):
+            for i in range(start, end + 1, 1):
                 data = self.data[index].iloc[i]
                 if entry.status == 'long':
                     if i == start:
@@ -182,7 +188,8 @@ class BOT(object):
                 self.trade_log = t
             else:
                 self.trade_log = self.trade_log.append(t)
-        self.trade_log = self.trade_log.sort_values('date')
+        # note倒序，应对同一标的先平仓再反向建仓的情况
+        self.trade_log = self.trade_log.sort_values(by=['date', 'note'], ascending=[True, False])
         self.trade_log = self.trade_log.reset_index(drop=True)
         self.trade_log['unit'] = 0
 
@@ -218,13 +225,14 @@ class BOT(object):
             risk_per_lot_inherent = (data.last_high2 - data.close) * self.point_value[index]
             if data.trailing_stop != 0:
                 risk_per_lot_trailing = (data.trailing_stop - data.close) * self.point_value[index]
+        # print('inherent risk per lot:', risk_per_lot_inherent, 'trailing risk per lot:', risk_per_lot_trailing)
         return risk_per_lot_inherent if risk_per_lot_inherent > risk_per_lot_trailing else risk_per_lot_trailing
 
     def getVolatilityPerLot(self, data, index):
         return data.atr * self.point_value[index]
 
     def getUnitByRisk(self, equity, risk_per_lot):
-        return math.floor(equity * self.setting['initial_risk_budget'] / risk_per_lot)
+        return int(equity * self.setting['initial_risk_budget'] / risk_per_lot)
 
     def getUnitByVolatility(self, equity, volatility_per_lot):
         return int(equity * self.setting['initial_risk_budget'] / volatility_per_lot)
@@ -234,32 +242,51 @@ class BOT(object):
         volatility_per_lot = self.getVolatilityPerLot(self.last_data[trade.instru], trade.instru)
         initial_units_by_risk = self.getUnitByRisk(equity, risk_per_lot)
         initial_units_by_volatility = self.getUnitByVolatility(equity, volatility_per_lot)
-        units = initial_units_by_risk if initial_units_by_risk > initial_units_by_volatility else initial_units_by_volatility
+        units = initial_units_by_risk if initial_units_by_risk < initial_units_by_volatility else initial_units_by_volatility
+        # print('risk unit:', initial_units_by_risk, 'volatility unit:', initial_units_by_volatility)
         return units * self.point_value[trade.instru]
 
-    def OnGoingPositionSizing(self, equity, close_balance):
+    def onGoingPositionSizing(self, equity, close_balance):
         total_risk = 0.0
+        position = self.current_position    # for total risk management
         for i, x in enumerate(self.current_position):
             if x != 0:
                 risk_per_lot = self.getRiskPerLot(self.last_data[i], i, self.current_status[i])
-                if risk_per_lot == 0:
-                    continue
                 volatility_per_lot = self.getVolatilityPerLot(self.last_data[i], i)
+                if risk_per_lot <= 0 or volatility_per_lot <= 0:
+                    # 都将在下一交易日平仓 todo 打印日期比对trade_log
+                    continue
                 units_by_risk = self.getUnitByRisk(equity, risk_per_lot)
                 units_by_volatility = self.getUnitByVolatility(equity, volatility_per_lot)
                 total_risk += risk_per_lot * (self.current_position[i] / self.point_value[i])
                 current_units = self.current_position[i] / self.point_value[i]
-                if current_units < units_by_risk or self.current_position[i] < units_by_volatility:
+                if current_units > units_by_risk or current_units > units_by_volatility:
                     ongoing_units = units_by_risk if units_by_risk < units_by_volatility else units_by_volatility
+                    print('current units:', current_units, 'risk units:', units_by_risk, 'onging units:', ongoing_units, 'volatility units:', units_by_volatility)
                     exit_price = self.current_data[i].open + (self.current_data[i].high - self.current_data[i].open)*self.setting['slippage_factor']
-                    adjust_units = self.current_position[i] - ongoing_units
+                    adjust_units = current_units - ongoing_units
                     self.current_position[i] = ongoing_units * self.point_value[i]
                     if self.current_status[i] == 'long':
                         close_balance += adjust_units * (exit_price - self.entry_price[i])
                     elif self.current_status[i] == 'short':
                         close_balance -= adjust_units * (exit_price - self.entry_price[i])
+
+        # total risk management
         # total_risk_ratio = total_risk / equity
         # if total_risk_ratio > self.setting['total_open_market_risk_limit']:
+        #     adjustment_factor = (total_risk_ratio - self.setting['total_open_market_risk_limit']) / total_risk_ratio
+        #     for i, x in enumerate(self.current_position):
+        #         if x != 0:
+        #             target_units = (1 - adjustment_factor) * (position[i] / self.point_value[i])
+        #             current_units = self.current_position[i] / self.point_value[i]
+        #             if target_units < current_units:
+        #                 adjust_units = current_units - target_units
+        #                 self.current_position[i] = target_units * self.point_value[i]
+        #                 exit_price = self.current_data[i].open + (self.current_data[i].high - self.current_data[i].open) * self.setting['slippage_factor']
+        #                 if self.current_status[i] == 'long':
+        #                     close_balance += adjust_units * (exit_price - self.entry_price[i])
+        #                 elif self.current_status[i] == 'short':
+        #                     close_balance -= adjust_units * (exit_price - self.entry_price[i])
         return close_balance, total_risk
 
     def onGoningTrade(self):
@@ -282,10 +309,11 @@ class BOT(object):
                 except Exception as ex:
                     # print('equity date miss', i, d.date)
                     continue
+
             # on going position sizing
-            close_balance, total_risk = self.OnGoingPositionSizing(last_equity, close_balance)
-            if ind > 0:
-                self.equity_log.loc[ind - 1, 'total_risk'] = total_risk
+            # close_balance, total_risk = self.onGoingPositionSizing(last_equity, close_balance)
+            # if ind > 0:
+            #     self.equity_log.loc[ind - 1, 'total_risk'] = total_risk
 
             # position init   # current_trade: 'date', 'price', 'note', 'status', 'data_index', 'instru'
             while d.date == current_trade.date and index_t < len(self.trade_log):
@@ -364,7 +392,7 @@ filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B
              'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'NE_B.CSV', 'NG2_B.CSV', 'NK_B.CSV', 'O2_B.CSV', 'PA2_B.CSV',
              'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV', 'SF_B.CSV', 'SI2_B.CSV',
              'SP2_B.CSV', 'US_B.CSV', 'W2_B.CSV']
-# filenames = ['BP_B.CSV', 'CD_B.CSV']
+# filenames = ['AD_B.CSV']
 for num, f in enumerate(filenames):
     filenames[num] = './in_data/reorganize/' + f
 

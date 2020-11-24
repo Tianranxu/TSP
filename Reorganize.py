@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 import pandas as pd
 import config
+import numpy as np
 
 class Reorganize(object):
     def __init__(self, files, setting):
@@ -57,101 +58,117 @@ class Reorganize(object):
 
     # 计算过去n天内（不包括当天）的最高价与最低价，其中天数指交易日
     def getPeriodBreak(self, ind):
-        for i, d in self.data[ind].iterrows():
-            if i == 0:
-                high1 = {'peak': [i, d.close], 'second': [-1, 0]}
-                high2 = {'peak': [i, d.close], 'second': [-1, 0]}
-                low1 = {'peak': [i, d.close], 'second': [-1, 0]}
-                low2 = {'peak': [i, d.close], 'second': [-1, 0]}
-                continue
-
-            # 这里必须保证second的交易日必须在peak交易日后面，second目的在于保留peak之后的第二高价
-            if d.close >= high1['peak'][1]:
-                high1['peak'] = [i, d.close]
-                high1['second'] = [-1, 0]
-            elif high1['second'][0] == -1 or d.close >= high1['second'][1]:
-                high1['second'] = [i, d.close]
-
-            if i - high1['peak'][0] >= self.setting['look_back_period_1']:  # 当最高价超过天数范围
-                high1['peak'] = high1['second']
-                high1['second'] = [-1, 0]
-                if high1['peak'][0] != i:
-                    # 往后面找第二高价
-                    tmp_data = self.data[ind][high1['peak'][0]+1: i+1]
-                    for c, td in tmp_data.iterrows():
-                        if high1['second'][0] == -1 or td.close >= high1['second'][1]:
-                            high1['second'] = [c, td.close]
-
-            if d.close >= high2['peak'][1]:
-                high2['peak'] = [i, d.close]
-                high2['second'] = [-1, 0]
-            elif high2['second'][0] == -1 or d.close >= high2['second'][1]:
-                high2['second'] = [i, d.close]
-
-            if i - high2['peak'][0] >= self.setting['look_back_period_2']:  # 当最高价超过天数范围
-                high2['peak'] = high2['second']
-                high2['second'] = [-1, 0]
-                if high2['peak'][0] != i:
-                    # 往后面找第二高价
-                    tmp_data = self.data[ind][high2['peak'][0]+1: i+1]
-                    for c, td in tmp_data.iterrows():
-                        if high2['second'][0] == -1 or td.close >= high2['second'][1]:
-                            high2['second'] = [c, td.close]
-
-            if d.close <= low1['peak'][1]:
-                low1['peak'] = [i, d.close]
-                low1['second'] = [-1, 0]
-            elif low1['second'][0] == -1 or d.close <= low1['second'][1]:
-                low1['second'] = [i, d.close]
-
-            if i - low1['peak'][0] >= self.setting['look_back_period_1']:  # 当最低价超过天数范围
-                low1['peak'] = low1['second']
-                low1['second'] = [-1, 0]
-                if low1['peak'][0] != i:
-                    # 往后面找第二低价
-                    tmp_data = self.data[ind][low1['peak'][0] + 1: i + 1]
-                    for c, td in tmp_data.iterrows():
-                        if low1['second'][0] == -1 or td.close <= low1['second'][1]:
-                            low1['second'] = [c, td.close]
-
-            if d.close <= low2['peak'][1]:
-                low2['peak'] = [i, d.close]
-                low2['second'] = [-1, 0]
-            elif low2['second'][0] == -1 or d.close <= low2['second'][1]:
-                low2['second'] = [i, d.close]
-
-            if i - low2['peak'][0] >= self.setting['look_back_period_2']:  # 当最低价超过天数范围
-                low2['peak'] = low2['second']
-                low2['second'] = [-1, 0]
-                if low2['peak'][0] != i:
-                    # 往后面找第二低价
-                    tmp_data = self.data[ind][low2['peak'][0] + 1: i + 1]
-                    for c, td in tmp_data.iterrows():
-                        if low2['second'][0] == -1 or td.close <= low2['second'][1]:
-                            low2['second'] = [c, td.close]
-
-            if i < len(self.data[ind])-1:
-                self.data[ind].loc[i + 1, 'last_high1'] = high1['peak'][1]
-                self.data[ind].loc[i + 1, 'last_high2'] = high2['peak'][1]
-                self.data[ind].loc[i + 1, 'last_low1'] = low1['peak'][1]
-                self.data[ind].loc[i + 1, 'last_low2'] = low2['peak'][1]
+        # for i, d in self.data[ind].iterrows():
+            # if i == 0:
+            #     high1 = {'peak': [i, d.close], 'second': [-1, 0]}
+            #     high2 = {'peak': [i, d.close], 'second': [-1, 0]}
+            #     low1 = {'peak': [i, d.close], 'second': [-1, 0]}
+            #     low2 = {'peak': [i, d.close], 'second': [-1, 0]}
+            #     continue
+            #
+            # # 这里必须保证second的交易日必须在peak交易日后面，second目的在于保留peak之后的第二高价
+            # if d.close >= high1['peak'][1]:
+            #     high1['peak'] = [i, d.close]
+            #     high1['second'] = [-1, 0]
+            # elif high1['second'][0] == -1 or d.close >= high1['second'][1]:
+            #     high1['second'] = [i, d.close]
+            #
+            # if i - high1['peak'][0] >= self.setting['look_back_period_1']:  # 当最高价超过天数范围
+            #     high1['peak'] = high1['second']
+            #     high1['second'] = [-1, 0]
+            #     if high1['peak'][0] != i:
+            #         # 往后面找第二高价
+            #         tmp_data = self.data[ind][high1['peak'][0]+1: i+1]
+            #         for c, td in tmp_data.iterrows():
+            #             if high1['second'][0] == -1 or td.close >= high1['second'][1]:
+            #                 high1['second'] = [c, td.close]
+            #
+            # if d.close >= high2['peak'][1]:
+            #     high2['peak'] = [i, d.close]
+            #     high2['second'] = [-1, 0]
+            # elif high2['second'][0] == -1 or d.close >= high2['second'][1]:
+            #     high2['second'] = [i, d.close]
+            #
+            # if i - high2['peak'][0] >= self.setting['look_back_period_2']:  # 当最高价超过天数范围
+            #     high2['peak'] = high2['second']
+            #     high2['second'] = [-1, 0]
+            #     if high2['peak'][0] != i:
+            #         # 往后面找第二高价
+            #         tmp_data = self.data[ind][high2['peak'][0]+1: i+1]
+            #         for c, td in tmp_data.iterrows():
+            #             if high2['second'][0] == -1 or td.close >= high2['second'][1]:
+            #                 high2['second'] = [c, td.close]
+            #
+            # if d.close <= low1['peak'][1]:
+            #     low1['peak'] = [i, d.close]
+            #     low1['second'] = [-1, 0]
+            # elif low1['second'][0] == -1 or d.close <= low1['second'][1]:
+            #     low1['second'] = [i, d.close]
+            #
+            # if i - low1['peak'][0] >= self.setting['look_back_period_1']:  # 当最低价超过天数范围
+            #     low1['peak'] = low1['second']
+            #     low1['second'] = [-1, 0]
+            #     if low1['peak'][0] != i:
+            #         # 往后面找第二低价
+            #         tmp_data = self.data[ind][low1['peak'][0] + 1: i + 1]
+            #         for c, td in tmp_data.iterrows():
+            #             if low1['second'][0] == -1 or td.close <= low1['second'][1]:
+            #                 low1['second'] = [c, td.close]
+            #
+            # if d.close <= low2['peak'][1]:
+            #     low2['peak'] = [i, d.close]
+            #     low2['second'] = [-1, 0]
+            # elif low2['second'][0] == -1 or d.close <= low2['second'][1]:
+            #     low2['second'] = [i, d.close]
+            #
+            # if i - low2['peak'][0] >= self.setting['look_back_period_2']:  # 当最低价超过天数范围
+            #     low2['peak'] = low2['second']
+            #     low2['second'] = [-1, 0]
+            #     if low2['peak'][0] != i:
+            #         # 往后面找第二低价
+            #         tmp_data = self.data[ind][low2['peak'][0] + 1: i + 1]
+            #         for c, td in tmp_data.iterrows():
+            #             if low2['second'][0] == -1 or td.close <= low2['second'][1]:
+            #                 low2['second'] = [c, td.close]
+            #
+            # if i < len(self.data[ind])-1:
+            #     self.data[ind].loc[i + 1, 'last_high1'] = high1['peak'][1]
+            #     self.data[ind].loc[i + 1, 'last_high2'] = high2['peak'][1]
+            #     self.data[ind].loc[i + 1, 'last_low1'] = low1['peak'][1]
+            #     self.data[ind].loc[i + 1, 'last_low2'] = low2['peak'][1]
 
         # 直接算
-        # for i, d in self.data[ind].iterrows():
-        #     if i >= self.setting['look_back_period_1']-1:
-        #         tmp_data = self.data[ind][i-self.setting['look_back_period_1']+1: i+1]
-        #         print(tmp_data)
-        #         thigh = 0
-        #         for c, td in tmp_data.iterrows():
-        #             if thigh < td.close:
-        #                 thigh = td.close
-        #         self.data[ind].loc[i+1, 'thigh'] = thigh
+        for i, d in self.data[ind].iterrows():
+            if self.setting['look_back_period_1']-1 <= i < len(self.data[ind]) - 1:
+                tmp_data1 = self.data[ind][i-self.setting['look_back_period_1']+1: i+1]
+                last_high1 = tmp_data2.loc[i - self.setting['look_back_period_2'] + 1].close
+                last_low1 = tmp_data2.loc[i - self.setting['look_back_period_2'] + 1].close
+                for c, td in tmp_data1.iterrows():
+                    if last_high1 < td.close:
+                        last_high1 = td.close
+                    if last_low1 > td.close:
+                        last_low1 = td.close
+                self.data[ind].loc[i + 1, 'last_high1'] = last_high1
+                self.data[ind].loc[i + 1, 'last_low1'] = last_low1
+
+            if self.setting['look_back_period_2']-1 <= i < len(self.data[ind]) - 1:
+                tmp_data2 = self.data[ind][i - self.setting['look_back_period_2'] + 1: i + 1]
+                last_high2 = tmp_data2.loc[i - self.setting['look_back_period_2'] + 1].close
+                last_low2 = tmp_data2.loc[i - self.setting['look_back_period_2'] + 1].close
+                for c, td in tmp_data2.iterrows():
+                    if last_high2 < td.close:
+                        last_high2 = td.close
+                    if last_low2 > td.close:
+                        last_low2 = td.close
+                self.data[ind].loc[i + 1, 'last_high2'] = last_high2
+                self.data[ind].loc[i + 1, 'last_low2'] = last_low2
 
 
     def mainFunc(self, names):
         self.setData()
         for i, n in enumerate(names):
-            self.data[i].to_csv('./in_data/reorganize/' + n)
+            self.data[i].date.astype('int')
+            self.data[i].to_csv('./in_data/reorganize2/' + n)
 
 
 # filenames = ['SP2_B2.CSV', 'JY_B.CSV', 'GC2_B.CSV', 'ED_B.CSV', 'CT2_B.CSV', 'CL2_B.CSV', 'BP_B.CSV', 'US_B.CSV', 'SB2_B.CSV', 'S2_B.CSV', 'PL2_B.CSV', 'LC_B.CSV']
@@ -159,6 +176,7 @@ filenames = ['AD_B.CSV', 'BO2_B.CSV', 'BP_B.CSV', 'C2_B.CSV', 'CD_B.CSV', 'CL2_B
              'FC_B.CSV', 'FF_B.CSV', 'FV_B.CSV', 'GC2_B.CSV', 'HG2_B.CSV', 'HO2_B.CSV', 'JY_B.CSV', 'LC_B.CSV', 'LH_B.CSV', 'NE_B.CSV',
              'NG2_B.CSV', 'NK_B.CSV', 'O2_B.CSV', 'PA2_B.CSV', 'PL2_B.CSV', 'RB2_B.CSV', 'RR2_B.CSV', 'RU_B.CSV', 'S2_B.CSV', 'SB2_B.CSV',
              'SF_B.CSV', 'SI2_B.CSV', 'SP2_B.CSV',  'US_B.CSV', 'W2_B.CSV']
+# filenames = ['AD_B.CSV']
 files = []
 for num, f in enumerate(filenames):
     files.append('./in_data/new36/' + f)
